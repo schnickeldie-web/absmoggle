@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  OWNER
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  SUSPENDED
+}
+
+enum BanType {
+  PERMANENT
+  TEMPORARY
+  IP
+}
+
+enum ReportCategory {
+  INSULT
+  NUDITY
+  FAKE_CAMERA
+  SPAM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  image          String?
+  role           UserRole @default(USER)
+  status         UserStatus @default(ACTIVE)
+  ipAddress      String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastSeenAt     DateTime?
+
+  wins           Int @default(0)
+  losses         Int @default(0)
+  currentStreak  Int @default(0)
+  bestStreak     Int @default(0)
+  bestScore      Float @default(0)
+  avgScore       Float @default(0)
+  webcamViolations Int @default(0)
+
+  matchesAsPlayer1 Match[] @relation("Player1")
+  matchesAsPlayer2 Match[] @relation("Player2")
+  wonMatches       Match[] @relation("Winner")
+  scanFrames       ScanFrame[]
+  reportsMade      Report[] @relation("Reporter")
+  reportsReceived  Report[] @relation("ReportedUser")
+  bans             Ban[]
+  streakHistory    StreakHistory[]
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  player1Id    String
+  player2Id    String?
+  player1Score Float    @default(0)
+  player2Score Float    @default(0)
+  winnerId     String?
+  durationSec  Int      @default(30)
+  aborted      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  player1      User     @relation("Player1", fields: [player1Id], references: [id])
+  player2      User?    @relation("Player2", fields: [player2Id], references: [id])
+  winner       User?    @relation("Winner", fields: [winnerId], references: [id])
+  scanFrames   ScanFrame[]
+  reports      Report[]
+
+  @@index([createdAt])
+}
+
+model ScanFrame {
+  id          String @id @default(cuid())
+  matchId     String
+  userId      String
+  score       Float
+  definition  Float
+  symmetry    Float
+  visibility  Float
+  consistency Float
+  confidence  Float
+  createdAt   DateTime @default(now())
+
+  match       Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user        User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, userId])
+}
+
+model StreakHistory {
+  id        String @id @default(cuid())
+  userId    String
+  value     Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Ban {
+  id          String @id @default(cuid())
+  userId      String?
+  ipAddress   String?
+  type        BanType
+  reason      String
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+
+  user        User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([ipAddress])
+}
+
+model Report {
+  id             String @id @default(cuid())
+  category       ReportCategory
+  status         ReportStatus @default(OPEN)
+  screenshotUrl  String
+  matchId        String
+  reporterId     String?
+  reportedUserId String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+
+  match          Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  reporter       User? @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reportedUser   User? @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+}
+
+model Announcement {
+  id        String @id @default(cuid())
+  message   String
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SystemSettings {
+  id                  String @id @default("global")
+  matchTimer          Int @default(30)
+  maxMatchDuration    Int @default(90)
+  rankingFormula      String @default("currentStreak,bestStreak,avgScore,wins")
+  turnServerUrl       String?
+  turnUsername        String?
+  turnPassword        String?
+  webRtcPolicy        String @default("all")
+  maintenanceMode     Boolean @default(false)
+  registrationEnabled Boolean @default(true)
+  updatedAt           DateTime @updatedAt
+}
